@@ -214,10 +214,13 @@ const NETWORKS = {
 };
 
 // เครือข่ายเริ่มต้นที่จะขอให้กระเป๋าสลับไป ถ้าตอนนี้อยู่บนเครือข่ายที่ไม่รองรับ
-const DEFAULT_CHAIN = '0x7a69';
+const DEFAULT_CHAIN = '0xa869';   // Fuji — เป็นเครือข่ายสาธารณะที่คนอื่นเข้ามาลองได้
 
-// address ที่ deploy ไว้แล้วบน Anvil (เติมให้อัตโนมัติถ้ายังไม่เคยกรอกเอง)
-const DEFAULT_CONTRACT = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+// address ของสัญญาที่ deploy ไว้แล้ว แยกตามเครือข่าย (ว่าง = ต้องกรอกเอง)
+const CONTRACTS = {
+  '0xa869': '',                                           // Fuji — รอเติมหลัง deploy
+  '0x7a69': '0x5FbDB2315678afecb367f032d93F642f64180aa3'   // Anvil Local
+};
 
 let activeChain = DEFAULT_CHAIN;                         // chainId ที่กำลังใช้อยู่จริง
 const explorerOf = (c) => NETWORKS[c]?.blockExplorerUrls?.[0] || '';
@@ -298,7 +301,7 @@ function humanError(err) {
 // อ่านค่าที่เคยบันทึกไว้ — ห่อ try/catch เพราะ localStorage อาจถูกบล็อกใน private mode
 try {
   const saved = localStorage.getItem('sickleave.addr');
-  $('addr').value = saved || DEFAULT_CONTRACT;
+  if (saved) $('addr').value = saved;
 } catch (_) {}
 
 $('addr').addEventListener('input', () => {
@@ -353,6 +356,11 @@ async function connect() {
     provider = new ethers.BrowserProvider(window.ethereum);
     signer   = await provider.getSigner();
     account  = await signer.getAddress();
+
+    // ช่อง address ยังว่าง -> เติม address ที่ deploy ไว้ของเครือข่ายนี้ให้
+    if (!$('addr').value.trim() && CONTRACTS[activeChain]) {
+      $('addr').value = CONTRACTS[activeChain];
+    }
 
     const net = await provider.getNetwork();
     $('vWallet').textContent = short(account);
