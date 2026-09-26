@@ -188,6 +188,97 @@
   </footer>
 </div>
 
+
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+<script>
+// ===== ตัวจำลองกระเป๋าสำหรับถ่ายภาพหน้าจอเท่านั้น =====
+// ทำหน้าที่แทน MetaMask: คำสั่งอ่านส่งต่อไป anvil ตรง ๆ ส่วนคำสั่งส่งธุรกรรม
+// จะเซ็นด้วย private key ทดสอบของ anvil แล้วส่งเป็น raw transaction
+(function () {
+  const RPC = 'http://127.0.0.1:8545';
+  const q = new URLSearchParams(location.search);
+  const KEY = q.get('key');
+  const STAGE = q.get('stage') || 'idle';
+  const wallet = new ethers.Wallet(KEY);
+  let id = 0;
+
+  async function rpc(method, params = []) {
+    const r = await fetch(RPC, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params })
+    });
+    const j = await r.json();
+    if (j.error) { const e = new Error(j.error.message); e.code = j.error.code; e.data = j.error.data; throw e; }
+    return j.result;
+  }
+
+  window.ethereum = {
+    isMetaMask: true,
+    on() {}, removeListener() {},
+    async request({ method, params = [] }) {
+      switch (method) {
+        case 'eth_chainId': return '0x7a69';
+        case 'eth_requestAccounts':
+        case 'eth_accounts': return [wallet.address];
+        case 'wallet_switchEthereumChain':
+        case 'wallet_addEthereumChain': return null;
+        case 'eth_sendTransaction': {
+          const t = params[0];
+          const [nonce, feeData] = await Promise.all([
+            rpc('eth_getTransactionCount', [wallet.address, 'pending']),
+            rpc('eth_gasPrice')
+          ]);
+          const signed = await wallet.signTransaction({
+            to: t.to, data: t.data, value: t.value || 0,
+            gasLimit: t.gas || '0x2dc6c0', gasPrice: feeData,
+            nonce: parseInt(nonce, 16), chainId: 31337
+          });
+          const hash = await rpc('eth_sendRawTransaction', [signed]);
+          // สั่ง anvil ปิด block ทันที ไม่ต้องรอรอบ 2 วินาที
+          // (นาฬิกาเสมือนของ headless Chrome เดินเร็วกว่าเวลาจริง ถ้ารอจะถ่ายไม่ทัน)
+          await rpc('evm_mine', []);
+          return hash;
+        }
+        default: return rpc(method, params);
+      }
+    }
+  };
+
+  // หน่วงการคืน receipt ให้สถานะ "รอ block ยืนยัน" ค้างอยู่นานพอถ่ายภาพได้
+  if (STAGE === 'pending') {
+    const orig = window.ethereum.request.bind(window.ethereum);
+    window.ethereum.request = async (a) =>
+      a.method === 'eth_getTransactionReceipt' ? null : orig(a);
+  }
+
+  // เดินเรื่องอัตโนมัติตามสถานะที่ขอมา
+  window.addEventListener('load', () => setTimeout(async () => {
+    const click = (id) => document.getElementById(id).click();
+    const wait  = (ms) => new Promise(r => setTimeout(r, ms));
+
+    click('btnConnect');
+    await wait(1500);
+    if (STAGE === 'connected') return;
+
+    const ta = document.getElementById('reason');
+    ta.value = 'debug prod ถึงตี 4 แล้วปรากฏว่าลืม deploy migration';
+    ta.dispatchEvent(new Event('input'));
+    await wait(300);
+    if (STAGE === 'filled') return;
+
+    click('btnClaim');
+    await wait(STAGE === 'pending' ? 2500 : 6000);
+    if (STAGE === 'success') return;
+
+    if (STAGE === 'duplicate') {      // กด claim ซ้ำด้วย address เดิม
+      document.getElementById('btnClaim').disabled = false;
+      click('btnClaim');
+      await wait(2500);
+    }
+  }, 400));
+})();
+</script>
 <script>
 /* =====================================================================
    ส่วนที่ 1: ค่าคงที่และ ABI
