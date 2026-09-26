@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SickNote · ใบลาป่วยฉุกเฉินบนบล็อกเชน</title>
+
+<!-- ethers.js v6 (UMD build) — เปิดไฟล์นี้ตรง ๆ ในเบราว์เซอร์ที่มี MetaMask ได้เลย -->
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+
+<style>
+  /* ---------- Design tokens: Apple-style dark, โทนเขียว/ฟ้า/เทาเข้ม ---------- */
+  :root{
+    --bg:#0b0d0f;            /* เทาเข้มเกือบดำ */
+    --surface:#15181c;       /* การ์ด */
+    --surface-2:#1d2126;     /* การ์ดซ้อน */
+    --border:rgba(255,255,255,.09);
+    --text:#f2f4f6;
+    --text-dim:#9aa3ad;
+    --accent:#30d158;        /* เขียว Apple (systemGreen) */
+    --accent-2:#0a84ff;      /* ฟ้า Apple (systemBlue) */
+    --warn:#ff9f0a;
+    --danger:#ff453a;
+    --radius:16px;
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","Noto Sans Thai",
+           "Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:
+      radial-gradient(900px 500px at 15% -10%, rgba(48,209,88,.10), transparent 60%),
+      radial-gradient(900px 500px at 85% 0%, rgba(10,132,255,.12), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--font);
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    display:flex; align-items:center; justify-content:center;
+    padding:32px 16px;
+  }
+  .wrap{width:100%;max-width:520px}
+
+  /* ---------- Header ---------- */
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);
+       box-shadow:0 0 12px var(--accent)}
+  .brand span{font-size:13px;letter-spacing:.04em;color:var(--text-dim);text-transform:uppercase}
+  h1{font-size:30px;line-height:1.25;letter-spacing:-.02em;margin:0 0 8px;font-weight:650}
+  .sub{margin:0 0 24px;color:var(--text-dim);font-size:15px;line-height:1.6}
+
+  /* ---------- Card ---------- */
+  .card{
+    background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0)) ,var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:20px;
+    margin-bottom:14px;
+    backdrop-filter:blur(20px);
+  }
+  .row{display:flex;justify-content:space-between;align-items:center;gap:12px;
+       padding:9px 0;font-size:14px}
+  .row + .row{border-top:1px solid var(--border)}
+  .row .k{color:var(--text-dim)}
+  .row .v{font-variant-numeric:tabular-nums;font-weight:550;text-align:right;
+          word-break:break-all;max-width:62%}
+
+  /* ---------- Inputs ---------- */
+  label{display:block;font-size:13px;color:var(--text-dim);margin:0 0 7px}
+  input,textarea{
+    width:100%;background:var(--surface-2);color:var(--text);
+    border:1px solid var(--border);border-radius:12px;
+    padding:12px 14px;font:inherit;font-size:15px;outline:none;resize:none;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  input:focus,textarea:focus{border-color:var(--accent-2);
+    box-shadow:0 0 0 3px rgba(10,132,255,.22)}
+  .hint{font-size:12px;color:var(--text-dim);margin-top:6px}
+  .field + .field{margin-top:16px}
+
+  /* ---------- Buttons ---------- */
+  button{
+    width:100%;border:0;border-radius:13px;padding:14px 18px;
+    font:inherit;font-size:16px;font-weight:600;color:#fff;cursor:pointer;
+    transition:transform .08s, opacity .15s, background .15s;
+  }
+  button:active{transform:scale(.985)}
+  button:disabled{opacity:.42;cursor:not-allowed}
+  .btn-primary{background:linear-gradient(180deg,#3ee06a,#25b84b)}
+  .btn-blue{background:linear-gradient(180deg,#3a9bff,#0a6fe0)}
+  .btn-ghost{background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
+  .btn-stack > * + *{margin-top:10px}
+
+  /* ---------- Status pill ---------- */
+  .status{
+    display:flex;align-items:flex-start;gap:11px;
+    border-radius:13px;padding:13px 15px;font-size:14px;line-height:1.5;
+    border:1px solid var(--border);background:var(--surface-2);
+  }
+  .status.idle{display:none}
+  .status.info   {border-color:rgba(10,132,255,.4); background:rgba(10,132,255,.10)}
+  .status.pending{border-color:rgba(255,159,10,.4); background:rgba(255,159,10,.10)}
+  .status.ok     {border-color:rgba(48,209,88,.45); background:rgba(48,209,88,.11)}
+  .status.err    {border-color:rgba(255,69,58,.45); background:rgba(255,69,58,.11)}
+  .status .msg{flex:1;min-width:0;word-break:break-word}
+  .status a{color:var(--accent-2);text-decoration:none}
+  .status a:hover{text-decoration:underline}
+
+  /* วงกลมหมุนตอนรอ tx confirm */
+  .spinner{
+    width:16px;height:16px;flex:0 0 16px;margin-top:2px;border-radius:50%;
+    border:2px solid rgba(255,255,255,.22);border-top-color:var(--warn);
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .icon{flex:0 0 16px;margin-top:1px;font-size:15px;line-height:1.2}
+
+  /* ---------- Ticket (แสดงเมื่อ claim สำเร็จ) ---------- */
+  .ticket{
+    border:1px dashed rgba(48,209,88,.5);border-radius:var(--radius);
+    background:rgba(48,209,88,.07);padding:18px;
+  }
+  .ticket h2{margin:0 0 4px;font-size:17px}
+  .ticket .big{font-size:38px;font-weight:700;letter-spacing:-.02em;color:var(--accent);
+               font-variant-numeric:tabular-nums;margin:6px 0 2px}
+  .ticket .cap{font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
+  .hidden{display:none}
+  footer{margin-top:18px;text-align:center;font-size:12px;color:var(--text-dim);line-height:1.7}
+  code{background:var(--surface-2);padding:1px 6px;border-radius:6px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="brand"><i class="dot"></i><span>SickNote · Module 3</span></div>
+  <h1>ใบลาป่วยฉุกเฉิน</h1>
+  <p class="sub">โค้ดพังตอนตีสาม แต่ยังต้องเข้าประชุมเก้าโมง —
+     กด claim สิทธิ์ลาป่วย 1 ใบ พร้อมรับ <b>พอยต์คนสู้ชีวิต</b> 100 แต้ม
+     (1 address ใช้ได้ครั้งเดียว กดซ้ำสัญญาจะ revert)</p>
+
+  <!-- การ์ดตั้งค่า contract address -->
+  <div class="card">
+    <div class="field">
+      <label for="addr">ที่อยู่ Smart Contract (Fuji)</label>
+      <input id="addr" placeholder="0x..." spellcheck="false" autocomplete="off" />
+      <div class="hint">วาง address ที่ deploy แล้ว ระบบจำไว้ใน localStorage ให้</div>
+    </div>
+  </div>
+
+  <!-- การ์ดสถานะกระเป๋า -->
+  <div class="card">
+    <div class="row"><span class="k">กระเป๋า</span><span class="v" id="vWallet">ยังไม่เชื่อมต่อ</span></div>
+    <div class="row"><span class="k">เครือข่าย</span><span class="v" id="vNet">—</span></div>
+    <div class="row"><span class="k">พอยต์คนสู้ชีวิต</span><span class="v" id="vPoints">—</span></div>
+    <div class="row"><span class="k">ใบลาที่ออกแล้วทั้งหมด</span><span class="v" id="vTotal">—</span></div>
+  </div>
+
+  <!-- การ์ด claim -->
+  <div class="card">
+    <div class="field">
+      <label for="reason">เหตุผลการลา (ไม่เกิน 140 ตัวอักษร)</label>
+      <textarea id="reason" rows="3" maxlength="140"
+        placeholder="เช่น debug prod ถึงตี 4 แล้วปรากฏว่าลืม deploy migration"></textarea>
+      <div class="hint"><span id="cnt">0</span>/140</div>
+    </div>
+
+    <div class="btn-stack" style="margin-top:16px">
+      <button id="btnConnect" class="btn-blue">เชื่อมต่อกระเป๋า</button>
+      <button id="btnClaim" class="btn-primary" disabled>Claim ใบลาป่วยฉุกเฉิน</button>
+      <button id="btnRefresh" class="btn-ghost">รีเฟรชสถานะ</button>
+    </div>
+  </div>
+
+  <!-- แถบสถานะธุรกรรมเรียลไทม์ -->
+  <div id="status" class="status idle"><span class="icon">•</span><span class="msg"></span></div>
+
+  <!-- ใบลาที่ได้รับ -->
+  <div id="ticket" class="ticket hidden" style="margin-top:14px">
+    <div class="cap">ใบลาเลขที่</div>
+    <div class="big" id="tId">#—</div>
+    <h2 id="tReason">—</h2>
+    <div class="cap" id="tWhen">—</div>
+  </div>
+
+  <footer>
+    รองรับ Anvil Local (31337) และ Avalanche Fuji (43113)<br />
+    เป็น testnet ทั้งคู่ ไม่ใช่เงินจริง
+  </footer>
+</div>
+
+<script>
+/* =====================================================================
+   ส่วนที่ 1: ค่าคงที่และ ABI
+   ===================================================================== */
+
+// เครือข่ายที่หน้านี้รองรับ — key คือ chainId ฐานสิบหก
+const NETWORKS = {
+  // Avalanche Fuji Testnet (ของจริง ใช้ AVAX จาก faucet)
+  '0xa869': {
+    chainId: '0xa869',               // 43113
+    chainName: 'Avalanche Fuji C-Chain',
+    nativeCurrency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
+    rpcUrls: ['https://api.avax-test.network/ext/bc/C/rpc'],
+    blockExplorerUrls: ['https://testnet.snowtrace.io']
+  },
+  // Anvil / Hardhat บนเครื่องตัวเอง (สำหรับ dev ไม่มี explorer)
+  '0x7a69': {
+    chainId: '0x7a69',               // 31337
+    chainName: 'Anvil Local',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['http://127.0.0.1:8545'],
+    blockExplorerUrls: []
+  }
+};
+
+// เครือข่ายเริ่มต้นที่จะขอให้กระเป๋าสลับไป ถ้าตอนนี้อยู่บนเครือข่ายที่ไม่รองรับ
+const DEFAULT_CHAIN = '0x7a69';
+
+// address ที่ deploy ไว้แล้วบน Anvil (เติมให้อัตโนมัติถ้ายังไม่เคยกรอกเอง)
+const DEFAULT_CONTRACT = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+
+let activeChain = DEFAULT_CHAIN;                         // chainId ที่กำลังใช้อยู่จริง
+const explorerOf = (c) => NETWORKS[c]?.blockExplorerUrls?.[0] || '';
+
+// ABI แบบ human-readable ของ ethers v6 — เอาเฉพาะฟังก์ชันที่ frontend ใช้
+const ABI = [
+  'function claimSickLeave(string reason) returns (uint32)',
+  'function hasClaimed(address) view returns (bool)',
+  'function canClaim(address user) view returns (bool)',
+  'function survivorPoints(address) view returns (uint256)',
+  'function totalTickets() view returns (uint32)',
+  'function paused() view returns (bool)',
+  'function getRecord(address user) view returns (bool claimed, uint32 ticketId, uint40 claimedAt, uint16 points, string reason)',
+  'event SickLeaveClaimed(address indexed claimer, uint32 indexed ticketId, uint16 points, uint40 claimedAt, string reason)',
+  // custom errors: ต้องใส่ใน ABI ด้วย ไม่งั้น ethers ถอดรหัสสาเหตุ revert ไม่ออก
+  'error AlreadyClaimed(address claimer, uint40 claimedAt)',
+  'error ReentrantCall()',
+  'error ContractPaused()',
+  'error ReasonTooLong(uint256 length, uint256 maxLength)'
+];
+
+/* =====================================================================
+   ส่วนที่ 2: State + helper สำหรับแตะ DOM
+   ===================================================================== */
+
+let provider, signer, contract, account;
+const $ = (id) => document.getElementById(id);
+const short = (a) => a.slice(0, 6) + '…' + a.slice(-4);
+
+/**
+ * แสดงสถานะธุรกรรมแบบเรียลไทม์
+ * @param {'idle'|'info'|'pending'|'ok'|'err'} kind ชนิดสถานะ (คุมสีและไอคอน)
+ * @param {string} html ข้อความ (รับ HTML ได้ เพื่อแทรกลิงก์ explorer)
+ */
+function setStatus(kind, html) {
+  const box = $('status');
+  box.className = 'status ' + kind;
+  const icon = { info: '•', ok: '✓', err: '✕', idle: '•' }[kind];
+  box.innerHTML =
+    (kind === 'pending' ? '<span class="spinner"></span>' : `<span class="icon">${icon}</span>`) +
+    `<span class="msg">${html}</span>`;
+}
+function txLink(h) {
+  const base = explorerOf(activeChain);
+  return base
+    ? `<a href="${base}/tx/${h}" target="_blank" rel="noopener">${short(h)}</a>`
+    : `<code>${short(h)}</code>`;   // local chain ไม่มี block explorer
+}
+
+/**
+ * แปลง error จาก ethers/MetaMask ให้เป็นข้อความไทยที่อ่านรู้เรื่อง
+ * @dev ethers v6 ใส่ชื่อ custom error ไว้ใน err.revert?.name
+ */
+function humanError(err) {
+  const name = err?.revert?.name;
+  if (name === 'AlreadyClaimed') {
+    const ts = Number(err.revert.args?.[1] ?? 0);
+    const when = ts ? new Date(ts * 1000).toLocaleString('th-TH') : 'ก่อนหน้านี้';
+    return `address นี้เคย claim ไปแล้วเมื่อ ${when} — สัญญา revert เพื่อกันกดซ้ำ`;
+  }
+  if (name === 'ContractPaused') return 'สัญญาถูก pause ชั่วคราว ยังรับ claim ไม่ได้';
+  if (name === 'ReasonTooLong') return 'ข้อความเหตุผลยาวเกิน 140 ตัวอักษร';
+  if (name === 'ReentrantCall') return 'ตรวจพบการเรียกซ้อน (re-entrancy) ถูกบล็อก';
+
+  const code = err?.code ?? err?.info?.error?.code;
+  if (code === 'ACTION_REJECTED' || code === 4001) return 'ผู้ใช้ยกเลิกธุรกรรมใน MetaMask';
+  if (code === 'INSUFFICIENT_FUNDS') return activeChain === '0x7a69'
+      ? 'ยอดเงินในบัญชีไม่พอจ่าย gas — import test account ของ anvil เข้า MetaMask ก่อน'
+      : 'AVAX ไม่พอจ่าย gas — ไปขอที่ faucet.avax.network';
+  if (code === 'CALL_EXCEPTION') return 'เรียกสัญญาไม่สำเร็จ ตรวจ address และเครือข่ายอีกครั้ง';
+  return err?.shortMessage || err?.info?.error?.message || err?.message || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ';
+}
+
+/* =====================================================================
+   ส่วนที่ 3: จัดการ contract address (จำไว้ใน localStorage)
+   ===================================================================== */
+
+// อ่านค่าที่เคยบันทึกไว้ — ห่อ try/catch เพราะ localStorage อาจถูกบล็อกใน private mode
+try {
+  const saved = localStorage.getItem('sickleave.addr');
+  $('addr').value = saved || DEFAULT_CONTRACT;
+} catch (_) {}
+
+$('addr').addEventListener('input', () => {
+  try { localStorage.setItem('sickleave.addr', $('addr').value.trim()); } catch (_) {}
+  contract = null;          // address เปลี่ยน -> ต้องผูก contract ใหม่
+  $('btnClaim').disabled = true;
+});
+
+// ตัวนับตัวอักษรของ textarea
+$('reason').addEventListener('input', (e) => { $('cnt').textContent = e.target.value.length; });
+
+/* =====================================================================
+   ส่วนที่ 4: เชื่อมต่อกระเป๋า + สลับเครือข่ายเป็น Fuji
+   ===================================================================== */
+
+/**
+ * ตรวจว่ากระเป๋าอยู่บนเครือข่ายที่รองรับหรือยัง
+ * @dev ถ้าอยู่บนเครือข่ายที่อยู่ในตาราง NETWORKS แล้ว ใช้ตัวนั้นเลย ไม่บังคับสลับ
+ *      ถ้าไม่อยู่ ค่อยขอให้สลับไป DEFAULT_CHAIN (เพิ่มเครือข่ายให้ถ้ายังไม่มี)
+ */
+async function ensureNetwork() {
+  const current = await window.ethereum.request({ method: 'eth_chainId' });
+  if (NETWORKS[current]) { activeChain = current; return; }
+
+  const target = NETWORKS[DEFAULT_CHAIN];
+  try {
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: target.chainId }]
+    });
+  } catch (e) {
+    // 4902 = ยังไม่มีเครือข่ายนี้ในกระเป๋า -> ขอเพิ่มให้
+    if (e.code === 4902 || e?.data?.originalError?.code === 4902) {
+      await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [target] });
+    } else {
+      throw e;
+    }
+  }
+  activeChain = DEFAULT_CHAIN;
+}
+
+async function connect() {
+  if (!window.ethereum) {
+    setStatus('err', 'ไม่พบ MetaMask — ติดตั้งส่วนขยายก่อน แล้วรีโหลดหน้านี้');
+    return;
+  }
+  try {
+    setStatus('info', 'กำลังขออนุญาตจากกระเป๋า…');
+    await window.ethereum.request({ method: 'eth_requestAccounts' });
+    await ensureNetwork();
+
+    provider = new ethers.BrowserProvider(window.ethereum);
+    signer   = await provider.getSigner();
+    account  = await signer.getAddress();
+
+    const net = await provider.getNetwork();
+    $('vWallet').textContent = short(account);
+    $('vNet').textContent = `${NETWORKS[activeChain]?.chainName || net.name} (${net.chainId})`;
+
+    setStatus('ok', `เชื่อมต่อแล้ว: ${short(account)}`);
+    await refresh();
+  } catch (err) {
+    setStatus('err', humanError(err));
+  }
+}
+
+/** ผูก instance ของสัญญาจาก address ในช่อง input */
+function bindContract() {
+  const addr = $('addr').value.trim();
+  if (!ethers.isAddress(addr)) throw new Error('ที่อยู่สัญญาไม่ถูกต้อง — ต้องเป็น 0x ตามด้วย 40 ตัวอักษร');
+  if (!signer) throw new Error('ยังไม่ได้เชื่อมต่อกระเป๋า');
+  contract = new ethers.Contract(addr, ABI, signer);
+  return contract;
+}
+
+/* =====================================================================
+   ส่วนที่ 5: อ่านสถานะจาก on-chain
+   ===================================================================== */
+
+async function refresh() {
+  if (!signer) { setStatus('info', 'เชื่อมต่อกระเป๋าก่อนเพื่อดูสถานะ'); return; }
+  try {
+    const c = bindContract();
+
+    // ยิง view call พร้อมกันทีเดียว เร็วกว่าเรียงต่อกัน
+    const [points, total, paused, rec] = await Promise.all([
+      c.survivorPoints(account),
+      c.totalTickets(),
+      c.paused(),
+      c.getRecord(account)
+    ]);
+
+    $('vPoints').textContent = `${points.toString()} แต้ม`;
+    $('vTotal').textContent  = `${total.toString()} ใบ`;
+
+    const claimed = rec[0];
+    renderTicket(claimed ? rec : null);
+
+    // ปิดปุ่มถ้า claim แล้วหรือสัญญาถูก pause — กันผู้ใช้เสีย gas ไปกับ tx ที่จะ revert แน่ ๆ
+    $('btnClaim').disabled = claimed || paused;
+    $('btnClaim').textContent = claimed
+      ? 'คุณใช้สิทธิ์ไปแล้ว'
+      : (paused ? 'สัญญาถูก pause ชั่วคราว' : 'Claim ใบลาป่วยฉุกเฉิน');
+
+    if (claimed)      setStatus('ok', 'address นี้ถือใบลาอยู่แล้ว กดซ้ำสัญญาจะ revert');
+    else if (paused)  setStatus('err', 'สัญญาถูก pause อยู่');
+    else              setStatus('info', 'พร้อม claim — ใส่เหตุผลแล้วกดปุ่มเขียว');
+  } catch (err) {
+    setStatus('err', humanError(err));
+  }
+}
+
+/** วาดการ์ดใบลา (ส่ง null เพื่อซ่อน) */
+function renderTicket(rec) {
+  const box = $('ticket');
+  if (!rec) { box.classList.add('hidden'); return; }
+  const [, ticketId, claimedAt, points, reason] = rec;
+  $('tId').textContent     = '#' + ticketId.toString();
+  $('tReason').textContent = reason || '(ไม่ระบุเหตุผล)';
+  $('tWhen').textContent   =
+    new Date(Number(claimedAt) * 1000).toLocaleString('th-TH') + ' · +' + points.toString() + ' แต้ม';
+  box.classList.remove('hidden');
+}
+
+/* =====================================================================
+   ส่วนที่ 6: Claim — หัวใจของหน้านี้ พร้อมสถานะเรียลไทม์ 4 ขั้น
+   ===================================================================== */
+
+async function claim() {
+  const btn = $('btnClaim');
+  try {
+    const c = bindContract();
+    const reason = $('reason').value.trim() || 'อดนอน debug ทั้งคืน';
+    btn.disabled = true;
+
+    // ขั้นที่ 1: simulate ด้วย staticCall ก่อนส่งจริง
+    // ถ้าจะ revert (เช่นเคย claim แล้ว) จะรู้ทันทีโดยไม่เสีย gas เลย
+    setStatus('pending', 'กำลังตรวจสิทธิ์กับสัญญา (simulate ก่อนส่ง)…');
+    await c.claimSickLeave.staticCall(reason);
+
+    // ขั้นที่ 2: ประเมิน gas แล้วขอลายเซ็นจากผู้ใช้
+    setStatus('pending', 'เปิด MetaMask เพื่อยืนยันธุรกรรม…');
+    const gas = await c.claimSickLeave.estimateGas(reason);
+    const tx  = await c.claimSickLeave(reason, { gasLimit: (gas * 120n) / 100n }); // เผื่อ 20%
+
+    // ขั้นที่ 3: tx ถูกส่งเข้า mempool แล้ว — แสดงลิงก์ explorer ทันที
+    setStatus('pending', `ส่งธุรกรรมแล้ว ${txLink(tx.hash)} · รอ block ยืนยัน…`);
+
+    // ขั้นที่ 4: รอ receipt (Fuji ปิด block ราว 2 วินาที)
+    const receipt = await tx.wait(1);
+    if (receipt.status !== 1) throw new Error('ธุรกรรมถูก mine แต่สถานะ failed');
+
+    // ถอด event SickLeaveClaimed จาก log เพื่อเอาเลขที่ใบลาจริงจาก on-chain
+    let ticketId = '?';
+    for (const log of receipt.logs) {
+      try {
+        const parsed = c.interface.parseLog(log);
+        if (parsed?.name === 'SickLeaveClaimed') { ticketId = parsed.args.ticketId.toString(); break; }
+      } catch (_) { /* log ของสัญญาอื่น ข้ามไป */ }
+    }
+
+    setStatus('ok',
+      `ออกใบลาสำเร็จ! ใบเลขที่ #${ticketId} · +100 แต้ม · block ${receipt.blockNumber} · ${txLink(tx.hash)}`);
+    await refresh();
+  } catch (err) {
+    setStatus('err', humanError(err));
+    btn.disabled = false;
+  }
+}
+
+/* =====================================================================
+   ส่วนที่ 7: ผูก event และฟังการเปลี่ยนแปลงจากกระเป๋า
+   ===================================================================== */
+
+$('btnConnect').onclick = connect;
+$('btnClaim').onclick   = claim;
+$('btnRefresh').onclick = refresh;
+
+if (window.ethereum) {
+  // ผู้ใช้สลับบัญชี/เครือข่ายใน MetaMask -> โหลดสถานะใหม่ทั้งหมด
+  window.ethereum.on('accountsChanged', () => location.reload());
+  window.ethereum.on('chainChanged',    () => location.reload());
+}
+</script>
+</body>
+</html>
